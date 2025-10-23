@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Square Town</title>
+<style>
+body{font-family:system-ui,Arial;display:flex;gap:24px;padding:24px;align-items:flex-start;flex-wrap:wrap}
+.left{width:400px}
+.canvas-wrap{width:420px;height:420px;border:2px solid #333;position:relative;background:#fafafa}
+.tile{position:absolute;box-sizing:border-box;border:1px solid #999;display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;user-select:none;transition: background 0.2s;}
+.tile.selected{outline:3px solid rgba(0,150,255,0.45);}
+label{display:inline-flex;align-items:center;gap:4px}
+.right{flex:1;min-width:250px;display:flex;flex-direction:column;justify-content:flex-start;margin-top:40px}
+.panel{background:#fff;border:1px solid #ddd;padding:8px;border-radius:6px;align-self:flex-start}
+.ops{margin-top:6px;font-family:monospace;word-wrap:break-word;font-size:18px;}
+.ops .pos{color:green;font-weight:700}
+.ops .neg{color:red;font-weight:700}
+.stats{margin-top:0;font-weight:700}
+button{padding:4px 8px;border-radius:4px;border:1px solid #bbb;background:#f5f5f5;cursor:pointer}
+button:disabled{opacity:0.5}
+.hint{font-size:12px;color:#555;margin-top:4px}
+.btn-group{display:flex;gap:6px;flex-wrap:wrap;margin-top:20px}
+.history-container{width:100%;margin-top:40px;}
+.history-panel{margin-top:8px;padding:6px;border:1px solid #ccc;border-radius:6px;max-height:200px;overflow-y:auto;font-family:monospace;font-size:14px;white-space:pre-wrap;background:#fafafa;}
+.history-entry{margin-bottom:16px;border-bottom:1px dashed #ccc;padding-bottom:8px;}
+</style>
+</head>
+<body>
+<div class="left">
+  <h2>Square Town</h2>
+  <div class="canvas-wrap" id="board"></div>
+</div>
+<div class="right">
+  <div class="panel">
+    <div class="stats">Total squares: <span id="totalCount">1</span></div>
+    <div class="hint">Click a tile to select for splitting or merging. Use the top-left tile to merge.</div>
+    <div id="compSection">
+      <h4 style="margin-top:8px">Computation</h4>
+      <div class="ops" id="ops">1</div>
+    </div>
+    <div class="btn-group">
+      <label>Split selected into:<select id="splitN"></select></label>
+      <button id="splitBtn">Split Selected</button>
+    </div>
+    <div class="btn-group">
+      <label>Merge size:<select id="mergeSize"></select></label>
+      <button id="mergeBtn">Merge Selected</button>
+      <button id="undoBtn">Undo</button>
+    </div>
+    <div class="btn-group">
+      <button id="captureBtn">Capture</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+    <div class="btn-group" style="margin-top:72px;">
+      <button id="toggleCompBtn">Hide Computation</button>
+    </div>
+  </div>
+</div>
+<div class="history-container">
+  <div class="btn-group">
+    <button id="downloadHistoryBtn">Download History</button>
+    <button id="clearHistoryBtn">Clear History</button>
+  </div>
+  <div class="history-panel" id="historyPanel"></div>
+</div>
+
+<script>
+const board = document.getElementById('board');
+const totalCountEl = document.getElementById('totalCount');
+const opsEl = document.getElementById('ops');
+const splitBtn = document.getElementById('splitBtn');
+const splitN = document.getElementById('splitN');
+const mergeBtn = document.getElementById('mergeBtn');
+const mergeSize = document.getElementById('mergeSize');
+const undoBtn = document.getElementById('undoBtn');
+const resetBtn = document.getElementById('resetBtn');
+const toggleCompBtn = document.getElementById('toggleCompBtn');
+const captureBtn = document.getElementById('captureBtn');
+const downloadHistoryBtn = document.getElementById('downloadHistoryBtn');
+const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+const historyPanel = document.getElementById('historyPanel');
+
+let tiles = [];
+let history = [];
+let computation = [];
+let selected = null;
+
+function createTile(x, y, size, label) {
+  const tile = document.createElement('div');
+  tile.className = 'tile';
+  tile.style.left = x + 'px';
+  tile.style.top = y + 'px';
+  tile.style.width = size + 'px';
+  tile.style.height = size + 'px';
+  tile.textContent = label;
+
+  tile.dataset.x = x;
+  tile.dataset.y = y;
+  tile.dataset.size = size;
+
+  tile.addEventListener('click', e => {
+    e.stopPropagation();
+    if (selected) selected.classList.remove('selected');
+    if (selected === tile) {
+      selected = null;
+    } else {
+      selected = tile;
+      tile.classList.add('selected');
+    }
+  });
+
+  board.appendChild(tile);
+  tiles.push(tile);
+}
+
+function updateStats() {
+  totalCountEl.textContent = tiles.length;
+  opsEl.textContent = computation.join(' + ') || '0';
+}
+
+function saveHistory(action, tilesSnapshot) {
+  history.push(tilesSnapshot.map(t => ({
+    x: +t.dataset.x,
+    y: +t.dataset.y,
+    size: +t.dataset.size,
+    label: t.textContent
+  })));
+
+  const entry = document.createElement('div');
+  entry.className = 'history-entry';
+  entry.textContent = `${action} → ${tilesSnapshot.length} tiles`;
+  historyPanel.appendChild(entry);
+}
+
+function restoreHistory() {
+  if (history.length === 0) return;
+  const last = history.pop();
+  tiles.forEach(t => board.removeChild(t));
+  tiles = [];
+
+  last.forEach(({ x, y, size, label }) => {
+    createTile(x, y, size, label);
+  });
+
+  selected = null;
+  computation.pop();
+  updateStats();
+}
+
+function resetBoard() {
+  tiles.forEach(t => board.removeChild(t));
+  tiles = [];
+  selected = null;
+  computation = [1];
+  history = [];
+  historyPanel.innerHTML = '';
+  createTile(0, 0, 420, '1');
+  updateStats();
+}
+
+function splitTile(tile, n) {
+  const size = +tile.dataset.size;
+  const x = +tile.dataset.x;
+  const y = +tile.dataset.y;
+  const newSize = size / n;
+
+  board.removeChild(tile);
+  tiles = tiles.filter(t => t !== tile);
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      createTile(x + j * newSize, y + i * newSize, newSize, `${n}`);
+    }
+  }
+
+  computation.push(n * n);
+  updateStats();
+}
+
+function mergeTiles(n) {
+  const size = 420 / n;
+  tiles.forEach(t => board.removeChild(t));
+  tiles = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      createTile(j * size, i * size, size, `1`);
+    }
+  }
+  computation.push(-((n * n) - 1));
+  updateStats();
+}
+
+splitBtn.onclick = () => {
+  if (!selected) return;
+  const n = +splitN.value;
+  saveHistory('Split', [...tiles]);
+  splitTile(selected, n);
+  selected = null;
+};
+
+mergeBtn.onclick = () => {
+  const n = +mergeSize.value;
+  saveHistory('Merge', [...tiles]);
+  mergeTiles(n);
+  selected = null;
+};
+
+undoBtn.onclick = () => restoreHistory();
+resetBtn.onclick = () => resetBoard();
+toggleCompBtn.onclick = () => {
+  const section = document.getElementById('compSection');
+  if (section.style.display === 'none') {
+    section.style.display = '';
+    toggleCompBtn.textContent = 'Hide Computation';
+  } else {
+    section.style.display = 'none';
+    toggleCompBtn.textContent = 'Show Computation';
+  }
+};
+captureBtn.onclick = () => {
+  alert("Capture feature not implemented in this demo.");
+};
+downloadHistoryBtn.onclick = () => {
+  const text = Array.from(historyPanel.children).map(e => e.textContent).join('\n');
+  const blob = new Blob([text], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'history.txt';
+  a.click();
+};
+clearHistoryBtn.onclick = () => {
+  historyPanel.innerHTML = '';
+};
+
+function populateOptions() {
+  for (let i = 2; i <= 6; i++) {
+    splitN.innerHTML += `<option value="${i}">${i} x ${i}</option>`;
+    mergeSize.innerHTML += `<option value="${i}">${i} x ${i}</option>`;
+  }
+}
+
+populateOptions();
+resetBoard();
+</script>
+</body>
+</html>
