@@ -5,24 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Square Town</title>
 <style>
-body{font-family:system-ui,Arial;display:flex;gap:24px;padding:24px;align-items:flex-start;flex-wrap:wrap}
+/* Give the entire page a light, cheerful background color suitable for children */
+body{font-family:system-ui,Arial;display:flex;gap:24px;padding:24px;align-items:flex-start;flex-wrap:wrap;background:#fff8e7;color:#333}
 .left{width:400px}
-.canvas-wrap{width:420px;height:420px;border:2px solid #333;position:relative;background:#fafafa}
-.tile{position:absolute;box-sizing:border-box;border:1px solid #999;display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;user-select:none;transition: background 0.2s;}
-.tile.selected{outline:3px solid rgba(0,150,255,0.45);}
+.canvas-wrap{width:420px;height:420px;border:2px solid #888;position:relative;background:#ffffff;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.15)}
+/* Tiles use vibrant pastel colors assigned dynamically via JavaScript. A subtle border and rounded corners give them a friendly appearance. */
+.tile{position:absolute;box-sizing:border-box;border:2px solid #333;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;user-select:none;border-radius:0;transition: transform 0.1s;}
+/* Highlight selected tiles with a thicker outline and a gentle glow */
+.tile.selected{outline:3px solid rgba(0,120,215,0.6);box-shadow:0 0 8px rgba(0,120,215,0.4);transform:scale(1.02);}
+/* Give the board a fixed size so it can capture mouse events for drag-selection */
+#board{width:420px;height:420px;position:relative;}
 label{display:inline-flex;align-items:center;gap:4px}
-.right{flex:1;min-width:250px;display:flex;flex-direction:column;justify-content:flex-start;margin-top:40px}
-.panel{background:#fff;border:1px solid #ddd;padding:8px;border-radius:6px;align-self:flex-start}
+.right{flex:1;min-width:250px;display:flex;flex-direction:column;justify-content:flex-start;margin-top:0}
+.panel{background:#fff9d5;border:2px solid #e8d89a;padding:12px;border-radius:12px;align-self:flex-start;box-shadow:0 2px 4px rgba(0,0,0,0.1);margin-top:69px}
 .ops{margin-top:6px;font-family:monospace;word-wrap:break-word;font-size:18px;}
-.ops .pos{color:green;font-weight:700}
-.ops .neg{color:red;font-weight:700}
-.stats{margin-top:0;font-weight:700}
-button{padding:4px 8px;border-radius:4px;border:1px solid #bbb;background:#f5f5f5;cursor:pointer}
-button:disabled{opacity:0.5}
+.ops .pos{color:#2e7d32;font-weight:700}
+.ops .neg{color:#c62828;font-weight:700}
+.stats{margin-top:0;font-weight:700;font-size:18px;color:#455a64}
+/* Style buttons in a friendly blue palette */
+.btn-group button, button{padding:6px 12px;border-radius:6px;border:none;background:#64b5f6;color:#ffffff;font-weight:bold;cursor:pointer;box-shadow:0 2px 2px rgba(0,0,0,0.1);transition:background 0.2s,transform 0.1s;}
+.btn-group button:hover, button:hover{background:#42a5f5;transform:translateY(-1px);} 
+button:disabled{opacity:0.5;cursor:not-allowed;}
 .hint{font-size:12px;color:#555;margin-top:4px}
 .btn-group{display:flex;gap:6px;flex-wrap:wrap;margin-top:20px}
 .history-container{width:100%;margin-top:40px;}
-.history-panel{margin-top:8px;padding:6px;border:1px solid #ccc;border-radius:6px;max-height:200px;overflow-y:auto;font-family:monospace;font-size:14px;white-space:pre-wrap;background:#fafafa;}
+.history-panel{margin-top:8px;padding:6px;border:1px solid #ccc;border-radius:6px;max-height:200px;overflow-y:auto;font-family:monospace;font-size:14px;white-space:pre-wrap;background:#fffbe1;}
 .history-entry{margin-bottom:16px;border-bottom:1px dashed #ccc;padding-bottom:8px;}
 </style>
 </head>
@@ -34,7 +41,7 @@ button:disabled{opacity:0.5}
 <div class="right">
   <div class="panel">
     <div class="stats">Total squares: <span id="totalCount">1</span></div>
-    <div class="hint">Click a tile to select for splitting or merging. Use the top-left tile to merge.</div>
+    <div class="hint">Click a tile and select the number of squares to split. Drag across squares and click Merge to combine them.</div>
     <div id="compSection">
       <h4 style="margin-top:8px">Computation</h4>
       <div class="ops" id="ops">1</div>
@@ -44,7 +51,7 @@ button:disabled{opacity:0.5}
       <button id="splitBtn">Split Selected</button>
     </div>
     <div class="btn-group">
-      <label>Merge size:<select id="mergeSize"></select></label>
+      <!-- Removed the merge size dropdown; merging will now automatically use the number of selected tiles to determine the square size -->
       <button id="mergeBtn">Merge Selected</button>
       <button id="undoBtn">Undo</button>
     </div>
@@ -72,7 +79,7 @@ const opsEl = document.getElementById('ops');
 const splitBtn = document.getElementById('splitBtn');
 const splitN = document.getElementById('splitN');
 const mergeBtn = document.getElementById('mergeBtn');
-const mergeSize = document.getElementById('mergeSize');
+// Removed mergeSize dropdown; merging will compute size based on the number of selected tiles
 const undoBtn = document.getElementById('undoBtn');
 const resetBtn = document.getElementById('resetBtn');
 const toggleCompBtn = document.getElementById('toggleCompBtn');
@@ -84,7 +91,34 @@ const historyPanel = document.getElementById('historyPanel');
 let tiles = [];
 let history = [];
 let computation = [];
-let selected = null;
+// Track selected tiles for multi-selection (multiple tiles can be selected for merging)
+let selectedTiles = [];
+
+// Define a palette of cheerful pastel colors for tiles. These colors will be
+// randomly assigned to each new tile created, making the game board vibrant
+// and engaging for primary school students.
+const pastelColors = [
+  '#FFD9E1', // soft pink
+  '#FFF5BA', // light yellow
+  '#D1F7C4', // pale green
+  '#CCE5FF', // light blue
+  '#E6CCFF', // lavender
+  '#FFECB3', // light orange
+  '#C8E6C9'  // mint green
+];
+
+// Flag indicating a click-and-drag selection is in progress
+// Drag state variables
+let isDragging = false;
+let hasDragged = false;
+let dragStartX = 0;
+let dragStartY = 0;
+
+// Helper to clear all current selections. Removes the 'selected' class from all selected tiles and resets the list.
+function clearSelection() {
+  selectedTiles.forEach(t => t.classList.remove('selected'));
+  selectedTiles = [];
+}
 
 function createTile(x, y, size, label) {
   const tile = document.createElement('div');
@@ -93,20 +127,32 @@ function createTile(x, y, size, label) {
   tile.style.top = y + 'px';
   tile.style.width = size + 'px';
   tile.style.height = size + 'px';
-  tile.textContent = label;
+  // Store the label internally but do not display it. The label corresponds to the split/merge factor
+  tile.dataset.label = label;
+  tile.textContent = '';
 
   tile.dataset.x = x;
   tile.dataset.y = y;
   tile.dataset.size = size;
 
-  tile.addEventListener('click', e => {
+  // Assign a random pastel background color to each tile. This enhances
+  // vibrancy and keeps the interface fun for children.
+  const color = pastelColors[Math.floor(Math.random() * pastelColors.length)];
+  tile.style.backgroundColor = color;
+
+  // Use a traditional function here so that `this` refers to the clicked tile.
+  tile.addEventListener('click', function(e) {
+    // If a drag-selection just occurred, ignore individual tile clicks to prevent conflicts
+    if (hasDragged) return;
     e.stopPropagation();
-    if (selected) selected.classList.remove('selected');
-    if (selected === tile) {
-      selected = null;
+    const clicked = this;
+    // Toggle selection for multi-select support
+    if (clicked.classList.contains('selected')) {
+      clicked.classList.remove('selected');
+      selectedTiles = selectedTiles.filter(t => t !== clicked);
     } else {
-      selected = tile;
-      tile.classList.add('selected');
+      clicked.classList.add('selected');
+      selectedTiles.push(clicked);
     }
   });
 
@@ -124,7 +170,8 @@ function saveHistory(action, tilesSnapshot) {
     x: +t.dataset.x,
     y: +t.dataset.y,
     size: +t.dataset.size,
-    label: t.textContent
+    // Store the label from the dataset instead of the visible text so labels can be hidden from view
+    label: t.dataset.label
   })));
 
   const entry = document.createElement('div');
@@ -136,25 +183,31 @@ function saveHistory(action, tilesSnapshot) {
 function restoreHistory() {
   if (history.length === 0) return;
   const last = history.pop();
+  // Remove all current tiles from the board
   tiles.forEach(t => board.removeChild(t));
   tiles = [];
-
+  // Recreate tiles from the last snapshot
   last.forEach(({ x, y, size, label }) => {
     createTile(x, y, size, label);
   });
-
-  selected = null;
+  // Clear selection after restoring
+  clearSelection();
+  // Remove the last computation entry
   computation.pop();
   updateStats();
 }
 
 function resetBoard() {
+  // Clear any current selections BEFORE removing tiles. This ensures the selected state is reset correctly on the existing tiles.
+  clearSelection();
+  // Remove all tiles and reset arrays
   tiles.forEach(t => board.removeChild(t));
   tiles = [];
-  selected = null;
+  // Reset computation and history
   computation = [1];
   history = [];
   historyPanel.innerHTML = '';
+  // Add the initial tile
   createTile(0, 0, 420, '1');
   updateStats();
 }
@@ -178,35 +231,155 @@ function splitTile(tile, n) {
   updateStats();
 }
 
-function mergeTiles(n) {
-  const size = 420 / n;
-  tiles.forEach(t => board.removeChild(t));
-  tiles = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      createTile(j * size, i * size, size, `1`);
+// Attempt to merge the currently selected tiles into an N×N square. Returns true on success, false otherwise.
+function attemptMergeSelection(n) {
+  // Must have exactly n*n tiles selected
+  if (selectedTiles.length !== n * n) return false;
+  // All selected tiles must have the same size
+  const sizes = new Set(selectedTiles.map(t => +t.dataset.size));
+  if (sizes.size !== 1) return false;
+  const baseSize = +selectedTiles[0].dataset.size;
+  // Determine bounding box of selected tiles
+  const xs = selectedTiles.map(t => +t.dataset.x);
+  const ys = selectedTiles.map(t => +t.dataset.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  // Ensure the selected tiles form a contiguous n×n grid
+  for (let row = 0; row < n; row++) {
+    for (let col = 0; col < n; col++) {
+      const x = minX + col * baseSize;
+      const y = minY + row * baseSize;
+      const found = selectedTiles.some(t => +t.dataset.x === x && +t.dataset.y === y);
+      if (!found) return false;
     }
   }
+  // Remove the selected tiles
+  selectedTiles.forEach(t => {
+    board.removeChild(t);
+    tiles = tiles.filter(el => el !== t);
+  });
+  // Create a new tile occupying the full square region
+  createTile(minX, minY, baseSize * n, '1');
+  // Update computation: merging n*n tiles reduces total count by (n*n - 1)
   computation.push(-((n * n) - 1));
   updateStats();
+  return true;
+}
+
+// Attempt to merge selected tiles of potentially different sizes if they together form a perfect square region.
+// Returns true on success, false otherwise.
+function attemptMergeAnySquare() {
+  if (selectedTiles.length === 0) return false;
+  // Determine the smallest tile size among the selection
+  const sizes = selectedTiles.map(t => +t.dataset.size);
+  const minSize = Math.min(...sizes);
+  // Compute bounding coordinates
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  selectedTiles.forEach(t => {
+    const x = +t.dataset.x;
+    const y = +t.dataset.y;
+    const size = +t.dataset.size;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x + size > maxX) maxX = x + size;
+    if (y + size > maxY) maxY = y + size;
+  });
+  const boundingW = maxX - minX;
+  const boundingH = maxY - minY;
+  // Bounding box must be a square and divisible by minSize
+  if (boundingW !== boundingH || boundingW % minSize !== 0) return false;
+  const cellsPerSide = boundingW / minSize;
+  const totalCells = cellsPerSide * cellsPerSide;
+  // Build a set of unit grid cells covered by selected tiles
+  const cellSet = new Set();
+  for (const t of selectedTiles) {
+    const x = +t.dataset.x;
+    const y = +t.dataset.y;
+    const size = +t.dataset.size;
+    for (let dx = 0; dx < size; dx += minSize) {
+      for (let dy = 0; dy < size; dy += minSize) {
+        const cellX = (x + dx - minX) / minSize;
+        const cellY = (y + dy - minY) / minSize;
+        cellSet.add(cellX + ',' + cellY);
+      }
+    }
+  }
+  // Coverage must exactly fill the bounding square
+  if (cellSet.size !== totalCells) return false;
+  // If we reach here, merging is valid
+  // Remove selected tiles
+  selectedTiles.forEach(t => {
+    board.removeChild(t);
+    tiles = tiles.filter(el => el !== t);
+  });
+  // Create the merged tile
+  createTile(minX, minY, boundingW, '1');
+  // Update computation: merging k tiles reduces count by (k-1)
+  computation.push(-((selectedTiles.length) - 1));
+  updateStats();
+  return true;
 }
 
 splitBtn.onclick = () => {
-  if (!selected) return;
   const n = +splitN.value;
+  // Remove any stale tile references (in case tiles were removed or reset)
+  selectedTiles = selectedTiles.filter(t => tiles.includes(t));
+  // Require exactly one tile to be selected for splitting
+  if (selectedTiles.length !== 1) {
+    alert('Please select exactly one tile to split.');
+    return;
+  }
+  const tileToSplit = selectedTiles[0];
   saveHistory('Split', [...tiles]);
-  splitTile(selected, n);
-  selected = null;
+  splitTile(tileToSplit, n);
+  // Clear selection after splitting
+  clearSelection();
 };
 
-mergeBtn.onclick = () => {
-  const n = +mergeSize.value;
+// Attach click handler for merging via addEventListener. This avoids potential overwrites of the onclick property.
+mergeBtn.addEventListener('click', () => {
+  // Remove any stale tile references (in case tiles were removed or reset)
+  selectedTiles = selectedTiles.filter(t => tiles.includes(t));
+  // If no tiles are selected, there's nothing to merge
+  if (selectedTiles.length === 0) return;
+  // Save current state before attempting merge. We pass a copy of current tiles for potential undo.
   saveHistory('Merge', [...tiles]);
-  mergeTiles(n);
-  selected = null;
-};
+  // Attempt to merge the currently selected tiles. This routine will allow merging
+  // equal-sized tiles as well as different-sized tiles so long as they form a
+  // contiguous square region. The computation array is updated inside the helper.
+  let success;
+  // First try the original equal-sized merging if all selected tiles share the same size
+  const distinctSizes = new Set(selectedTiles.map(t => +t.dataset.size));
+  if (distinctSizes.size === 1) {
+    const len = selectedTiles.length;
+    const n = Math.sqrt(len);
+    // Only attempt equal-sized N×N merge if the count of tiles is a perfect square (>1)
+    if (Number.isInteger(n) && n > 1) {
+      success = attemptMergeSelection(n);
+    } else {
+      success = false;
+    }
+  } else {
+    success = false;
+  }
+  // If equal-sized merge fails, try the flexible merging which can combine
+  // different-sized tiles into a larger square if the coverage is exact.
+  if (!success) {
+    success = attemptMergeAnySquare();
+  }
+  // If the merge was unsuccessful, revert the history entry and notify the user
+  if (!success) {
+    history.pop();
+    alert('Cannot form a square with the selected tiles. Please ensure the selected tiles together form a contiguous square region.');
+  }
+  // Clear selection after attempting merge
+  clearSelection();
+});
 
-undoBtn.onclick = () => restoreHistory();
+// Attach click handler for undo
+undoBtn.addEventListener('click', () => {
+  restoreHistory();
+});
 resetBtn.onclick = () => resetBoard();
 toggleCompBtn.onclick = () => {
   const section = document.getElementById('compSection');
@@ -218,8 +391,43 @@ toggleCompBtn.onclick = () => {
     toggleCompBtn.textContent = 'Show Computation';
   }
 };
+// Capture the current board as a PNG image and download it. We build a canvas
+// representation of the board using the current tile positions, sizes, colors,
+// and borders. The resulting image reflects exactly what the player sees on
+// the board (minus any UI elements).
 captureBtn.onclick = () => {
-  alert("Capture feature not implemented in this demo.");
+  // Create a canvas with the same dimensions as the board
+  const size = 420;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  // Fill with background color matching the board's background
+  const boardBg = getComputedStyle(board).backgroundColor || '#ffffff';
+  ctx.fillStyle = boardBg;
+  ctx.fillRect(0, 0, size, size);
+  // Draw each tile on the canvas
+  tiles.forEach(t => {
+    const x = +t.dataset.x;
+    const y = +t.dataset.y;
+    const w = +t.dataset.size;
+    const h = +t.dataset.size;
+    // Use the tile's background color if set, otherwise default to white
+    const color = t.style.backgroundColor || '#ffffff';
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+    // Draw tile border to match the visual grid lines
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+  });
+  // Convert canvas to a blob and trigger a download
+  canvas.toBlob(blob => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `square-town-board-${Date.now()}.png`;
+    link.click();
+  });
 };
 downloadHistoryBtn.onclick = () => {
   const text = Array.from(historyPanel.children).map(e => e.textContent).join('\n');
@@ -234,14 +442,84 @@ clearHistoryBtn.onclick = () => {
 };
 
 function populateOptions() {
+  // Populate split options; merge options are no longer needed and thus omitted
   for (let i = 2; i <= 6; i++) {
     splitN.innerHTML += `<option value="${i}">${i} x ${i}</option>`;
-    mergeSize.innerHTML += `<option value="${i}">${i} x ${i}</option>`;
   }
+}
+
+// ----- Drag selection logic -----
+// These handlers enable click-and-drag to select multiple tiles at once. A selection rectangle is drawn in memory (not visually), and any tiles intersecting it become selected.
+
+function handleMouseDown(e) {
+  if (e.button !== 0) return; // Only respond to left-click
+  // Record the starting point in client coordinates
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  // Prepare for potential drag selection
+  isDragging = true;
+  hasDragged = false;
+}
+
+function handleMouseMove(e) {
+  if (!isDragging) return;
+  const currentX = e.clientX;
+  const currentY = e.clientY;
+  // Determine if a real drag has started
+  if (!hasDragged) {
+    const dx = currentX - dragStartX;
+    const dy = currentY - dragStartY;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      hasDragged = true;
+      // Start fresh selection when the drag actually starts
+      clearSelection();
+    }
+  }
+  if (hasDragged) {
+    e.preventDefault();
+    updateSelection(dragStartX, dragStartY, currentX, currentY);
+  }
+}
+
+function handleMouseUp(e) {
+  if (!isDragging) return;
+  isDragging = false;
+  // Nothing else needed here; selection has already been updated during the drag
+  if (hasDragged) {
+    e.preventDefault();
+  }
+}
+
+// Update which tiles are selected based on a drag rectangle defined by two points (x1, y1) and (x2, y2)
+function updateSelection(x1, y1, x2, y2) {
+  // Compute normalized rectangle bounds in client coordinates
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+  selectedTiles = [];
+  tiles.forEach(t => {
+    // Get tile bounds in client coordinates
+    const tileRect = t.getBoundingClientRect();
+    // Check intersection between tile bounds and selection rectangle
+    const intersects = tileRect.left < maxX && tileRect.right > minX && tileRect.top < maxY && tileRect.bottom > minY;
+    if (intersects) {
+      if (!t.classList.contains('selected')) t.classList.add('selected');
+      selectedTiles.push(t);
+    } else {
+      t.classList.remove('selected');
+    }
+  });
 }
 
 populateOptions();
 resetBoard();
+
+// Attach drag selection handlers
+board.addEventListener('mousedown', handleMouseDown);
+board.addEventListener('mousemove', handleMouseMove);
+// Listen for mouseup on the whole document to ensure the selection finishes even if the mouse leaves the board
+document.addEventListener('mouseup', handleMouseUp);
 </script>
 </body>
 </html>
